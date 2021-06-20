@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Mesh CNN tutorial</title>
+        <style>
+</style>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.10.2/dist/katex.min.css" integrity="sha384-yFRtMMDnQtDRO8rLpMIKrtPCD5jdktao2TV19YiZYWMDkUR5GQZR/NOVTdquEx1j" crossorigin="anonymous">
+<link href="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item { list-style-type: none; } .task-list-item-checkbox { margin-left: -20px; vertical-align: middle; }
+</style>
+        
+        <script src="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.js"></script>
+        
+    </head>
+    <body class="vscode-body vscode-light">
+        <h1 id="mesh-cnn-tutorial">Mesh CNN tutorial</h1>
+<p>Contents</p>
+<ol>
+<li>
+<p><a href="#1-introduction-to-mesh-convolution">Introduction to Mesh Convolution</a></p>
+<p>1.1 <a href="#11-how-do-we-prepare-the-mesh-to-input-into-the-network">How do we prepare the mesh to input into the network?</a></p>
+<p>1.2 <a href="#12-how-to-apply-apply-mesh-convolution-on-this-data">How to apply apply mesh convolution on this data?</a></p>
+<p>1.3 Results</p>
+</li>
+</ol>
+<hr>
+<h2 id="1-introduction-to-mesh-convolution">1. Introduction to Mesh Convolution</h2>
+<h3 id="11-how-do-we-prepare-the-mesh-to-input-into-the-network">1.1 How do we prepare the mesh to input into the network?</h3>
+<p>Suppose you have a function called <code>create_mesh(filepath: str)</code>. This function accepts a <code>filepath</code> which is the path to your obj file.</p>
+<p>This function needs to do atleast the following tasks -</p>
+<pre><code>(a). Read mesh from file
+
+(b). Remove non-manifold edges (we will define it later for you)
+
+(c). Preprocessing the mesh
+
+(d). Building Convolution friendly matrix from mesh. We will call this GeMM matrix.
+
+(e). Post processing the mesh
+
+(f). Feature creation.
+</code></pre>
+<p>We will look at <code>(b)</code>, <code>(d)</code> and <code>(f)</code> in detail to understand the fundamental parts of data preparation for convolution.</p>
+<p><strong>(a) Read mesh from file</strong></p>
+<p>Returns faces and vertices, where each face is a triangle</p>
+<p><strong>(b) Remove non-manifold edges</strong></p>
+<p>The function computes face normals and face areas.
+If the area of a face is 0 or if the face is disconnected (none of the edge of that face is shared by any other face). Then the face is classified as non-manifold. example - polygon soup.</p>
+<p><strong>(c) Preprocessing the mesh</strong></p>
+<p>If preprocessing is enabled then we can flip some percentage of the edges of the graph.</p>
+<p><strong>(d) Building Convolution friendly matrix from mesh (GeMM matrix)</strong></p>
+<p>A GeMM matrix is a matrix that is the result of an operation called <code>im2col</code>. Think of this as flattening your <code>N8</code> neighborhood into a 1 dimension array. If we have 5 such <code>N8</code> neighborhoods around the entire image then our resulting GeMM matrix will be of the form [c1, c2, c3, c4, c5]. Where each <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>c</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">c_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.58056em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathdefault">c</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.31166399999999994em;"><span style="top:-2.5500000000000003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is a 1-d vector containing all the neighborhood nodes. If we have more than 1 channel then the <code>N8</code> neighborhoods will be present in the same way as for the first channel. We append the <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>c</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">c_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.58056em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathdefault">c</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.31166399999999994em;"><span style="top:-2.5500000000000003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> values of these channel 1-K after <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>c</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">c_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.58056em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathdefault">c</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.31166399999999994em;"><span style="top:-2.5500000000000003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> values of channel 0.</p>
+<p>Before <code>im2col</code> operation
+<img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/direct-conv-im2col.png" alt="Image"></p>
+<p>After <code>im2col</code> operation
+<img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/matrix-im2col.png" alt="Image"></p>
+<p><strong>(e) Post processing the mesh</strong></p>
+<p>If this feature is enabled then we can slide some percentage of the nodes in random directions.</p>
+<p><strong>(f) Feature Creation</strong></p>
+<p>For each edge we will create a 5 tuple list of features</p>
+<ul>
+<li>dihedral angle</li>
+<li>2 symmetric inner angles</li>
+<li>2 ratio of corresponding edge length / perpendicular <code> [e1/p1, e2/p2]</code> for the triangles sharing that edge</li>
+</ul>
+<p><img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/features.png" alt="Image"></p>
+<p>Let us look at an actual example to find out how to calculate these values -</p>
+<p>Consider the following planar mesh</p>
+<p><img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/example.png" alt="Image"></p>
+<p>This planar mesh has a 9 nodes, 16 edges and 8 faces. Let us label each of these nodes.</p>
+<table>
+<thead>
+<tr>
+<th>A</th>
+<th>B</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>D</strong></td>
+<td><strong>E</strong></td>
+<td><strong>F</strong></td>
+</tr>
+<tr>
+<td><strong>G</strong></td>
+<td><strong>H</strong></td>
+<td><strong>I</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Lets assign these nodes some coordinates -</p>
+<pre><code><code><div>A = [-1, 0, 1]
+B = [0, 0, 1]
+C = [1, 0, 1]
+D = [-1, 0, 0]
+E  = [0, 0, 0]
+F = [1, 0, 0]
+G = [-1, 0, -1]
+H = [0, 0, -1]
+I = [1, 0, -1]
+</div></code></code></pre>
+<p>After we read the mesh from our file, these nodes are read in the following order</p>
+<pre><code><code><div>nodes = [A, C, G, I, D, B, F, H, E]
+</div></code></code></pre>
+<p>Our edges are created as follows -</p>
+<pre><code class="language-python"><div>edges = {   
+            (<span class="hljs-number">0</span>, <span class="hljs-number">4</span>): <span class="hljs-number">7</span>,
+            (<span class="hljs-number">0</span>, <span class="hljs-number">5</span>): <span class="hljs-number">8</span>,
+            (<span class="hljs-number">1</span>, <span class="hljs-number">5</span>): <span class="hljs-number">11</span>,
+            (<span class="hljs-number">1</span>, <span class="hljs-number">6</span>): <span class="hljs-number">15</span>,
+            (<span class="hljs-number">1</span>, <span class="hljs-number">8</span>): <span class="hljs-number">9</span>,
+            (<span class="hljs-number">2</span>, <span class="hljs-number">4</span>): <span class="hljs-number">4</span>,
+            (<span class="hljs-number">2</span>, <span class="hljs-number">7</span>): <span class="hljs-number">14</span>,
+            (<span class="hljs-number">2</span>, <span class="hljs-number">8</span>): <span class="hljs-number">3</span>,
+            (<span class="hljs-number">3</span>, <span class="hljs-number">6</span>): <span class="hljs-number">12</span>,
+            (<span class="hljs-number">3</span>, <span class="hljs-number">7</span>): <span class="hljs-number">13</span>,
+            (<span class="hljs-number">4</span>, <span class="hljs-number">5</span>): <span class="hljs-number">6</span>,
+            (<span class="hljs-number">4</span>, <span class="hljs-number">8</span>): <span class="hljs-number">5</span>,
+            (<span class="hljs-number">5</span>, <span class="hljs-number">8</span>): <span class="hljs-number">10</span>,
+            (<span class="hljs-number">6</span>, <span class="hljs-number">7</span>): <span class="hljs-number">0</span>,
+            (<span class="hljs-number">6</span>, <span class="hljs-number">8</span>): <span class="hljs-number">2</span>,
+            (<span class="hljs-number">7</span>, <span class="hljs-number">8</span>): <span class="hljs-number">1</span> 
+        }
+<span class="hljs-comment">#edges = [&#x27;FH&#x27;, &#x27;HE&#x27;, &#x27;FE&#x27;, &#x27;GE&#x27;, &#x27;GD&#x27;, &#x27;DE&#x27;, &#x27;DB&#x27;, &#x27;AD&#x27;, &#x27;AB&#x27;, &#x27;CE&#x27;, &#x27;BE&#x27;, &#x27;CB&#x27;, &#x27;IF&#x27;, &#x27;IH&#x27;, &#x27;GH&#x27;, &#x27;CF&#x27;]</span>
+</div></code></pre>
+<table>
+<thead>
+<tr>
+<th>A</th>
+<th>B</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>D</strong></td>
+<td><strong>E</strong></td>
+<td><strong>F</strong></td>
+</tr>
+<tr>
+<td><strong>G</strong></td>
+<td><strong>H</strong></td>
+<td><strong>I</strong></td>
+</tr>
+</tbody>
+</table>
+<p>eg - <code>(A, D) &lt;=&gt; (0, 4)</code> as index of A and D is 0, 4 in the <code>nodes</code> list respectively</p>
+<p>We will start with a simple example and then move on to a harder example.</p>
+<ul>
+<li>
+<p>Case 1 - Edge features for edge <code>BD</code> (simple example)</p>
+<p>For the edge [B, D] it is visually intuitive to find the neighboring points as [A, E] and then calculate all these 5 features. The neigobors we get out of the code is <code>[0, 8]</code> which is [A, E]. They send this 4 point list  [B, D, A, E] to compute the edge features.</p>
+</li>
+<li>
+<p>Case 2 - Edge features for edge <code>AD</code> (hard example)</p>
+<p>For the edge [A, D] it is not clear on how to do the same thing. Our code returns us [5, 5] which is [B, B]. Each edge can have atmost 2 faces it can be part of. Therefore it can have atmost 4, 1-ring neighboring edges.
+The <code>GeMM matrix</code> keeps track of these neighbors. The entries for its neighboring edges are <code>[ 8,  6, -1, -1]</code> which says it has 2 edges connected to it directly. those are [A, B] and [D, B]. Since its not being shared by another triangle we have a <code>-1</code> entry for other edge entries.</p>
+</li>
+</ul>
+<p>Look at this image for illustration</p>
+<p><img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/cases.png" alt="Image"></p>
+<p>In case 1 common node of b and c, common node of d and e become the side points. In case 2 we copy the values of b and c into
+edge d and e respectively. This is because b and d do not exist
+in case 2. You can take a look at the code to confirm this.</p>
+<pre><code class="language-python"><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">get_side_points</span>(<span class="hljs-params">mesh, edge_id</span>):</span>
+  
+    edge_a = mesh.edges[edge_id]
+
+    <span class="hljs-keyword">if</span> mesh.gemm_edges[edge_id, <span class="hljs-number">0</span>] == <span class="hljs-number">-1</span>:
+        edge_b = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">2</span>]]
+        edge_c = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">3</span>]]
+    <span class="hljs-keyword">else</span>:
+        edge_b = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">0</span>]]
+        edge_c = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">1</span>]]
+    <span class="hljs-keyword">if</span> mesh.gemm_edges[edge_id, <span class="hljs-number">2</span>] == <span class="hljs-number">-1</span>:
+        edge_d = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">0</span>]]
+        edge_e = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">1</span>]]
+    <span class="hljs-keyword">else</span>:
+        edge_d = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">2</span>]]
+        edge_e = mesh.edges[mesh.gemm_edges[edge_id, <span class="hljs-number">3</span>]]
+    <span class="hljs-comment"># edge_a - common edge</span>
+    <span class="hljs-comment"># first triangle</span>
+    <span class="hljs-comment"># edge_b </span>
+    <span class="hljs-comment"># edge c</span>
+    <span class="hljs-comment"># second triangle</span>
+    <span class="hljs-comment"># edge_d </span>
+    <span class="hljs-comment"># edge_e </span>
+
+    <span class="hljs-string">&#x27;&#x27;&#x27;
+    if edge_d, edge_e is not avaible
+    then copy values of edge_b, edge_c
+    into edge_d, edge_e
+
+    the four vertices will be
+    2 vertices of edge a
+    1 vertex to complete left triangle
+    1 vertex to complete right triangle
+
+    then,
+
+    edge_a = [0, 4]
+    edge_b = [0, 5]
+    edge_c = [4, 5]
+    edge_d = edge_b
+    edge_e = edge_c
+
+    first_vertex = 0
+    second_vertex = 1
+    third_vertex = 1
+
+    return [a1, a2, edge_b[1], edge_d[1]]
+    i.e return [0, 4, 5, 5]
+
+    
+    &#x27;&#x27;&#x27;</span>
+    first_vertex = <span class="hljs-number">0</span>
+    second_vertex = <span class="hljs-number">0</span>
+    third_vertex = <span class="hljs-number">0</span>
+    <span class="hljs-keyword">if</span> edge_a[<span class="hljs-number">1</span>] <span class="hljs-keyword">in</span> edge_b:
+        first_vertex = <span class="hljs-number">1</span>
+    <span class="hljs-keyword">if</span> edge_b[<span class="hljs-number">1</span>] <span class="hljs-keyword">in</span> edge_c:
+        second_vertex = <span class="hljs-number">1</span>
+    <span class="hljs-keyword">if</span> edge_d[<span class="hljs-number">1</span>] <span class="hljs-keyword">in</span> edge_e:
+        third_vertex = <span class="hljs-number">1</span>
+    <span class="hljs-keyword">return</span> [edge_a[first_vertex], edge_a[<span class="hljs-number">1</span> - first_vertex], edge_b[second_vertex], edge_d[third_vertex]]
+
+
+</div></code></pre>
+<h3 id="12-how-to-apply-apply-mesh-convolution-on-this-data">1.2 How to apply apply mesh convolution on this data?</h3>
+<p>Currently, we have created features for each edge and hold information about the 1 ring neighbors using the GeMM matrix. We are now ready to perform convolution on this data. Inside the mesh convolution module there are 3 major steps.</p>
+<pre><code>(a) Pad GeMM matrix
+(b) Create actual GeMM matrix (In reality we cannot convolve over indices but over features, this step combines index based GeMM with our features)
+(c) Create symmetric features
+(d) Convolution
+</code></pre>
+<p><strong>(a) Pad GeMM matrix</strong>
+In this step, we pad the GeMM matrix with -</p>
+<ul>
+<li>Extra rows - to make sure all meshes in input have same number of edges</li>
+<li>Add extra column which contains row index.</li>
+</ul>
+<p>Visually given an input matrix -</p>
+<pre><code class="language-python"><div>GeMM = [[ <span class="hljs-number">1</span>,  <span class="hljs-number">2</span>, <span class="hljs-number">12</span>, <span class="hljs-number">13</span>],
+       [ <span class="hljs-number">2</span>,  <span class="hljs-number">0</span>, <span class="hljs-number">14</span>,  <span class="hljs-number">3</span>],
+       [ <span class="hljs-number">0</span>,  <span class="hljs-number">1</span>,  <span class="hljs-number">9</span>, <span class="hljs-number">15</span>],
+       [ <span class="hljs-number">4</span>,  <span class="hljs-number">5</span>,  <span class="hljs-number">1</span>, <span class="hljs-number">14</span>],
+       [ <span class="hljs-number">5</span>,  <span class="hljs-number">3</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>],
+       [ <span class="hljs-number">3</span>,  <span class="hljs-number">4</span>,  <span class="hljs-number">6</span>, <span class="hljs-number">10</span>],
+       [ <span class="hljs-number">7</span>,  <span class="hljs-number">8</span>, <span class="hljs-number">10</span>,  <span class="hljs-number">5</span>],
+       [ <span class="hljs-number">8</span>,  <span class="hljs-number">6</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>],
+       [ <span class="hljs-number">6</span>,  <span class="hljs-number">7</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>],
+       [<span class="hljs-number">10</span>, <span class="hljs-number">11</span>, <span class="hljs-number">15</span>,  <span class="hljs-number">2</span>],
+       [<span class="hljs-number">11</span>,  <span class="hljs-number">9</span>,  <span class="hljs-number">5</span>,  <span class="hljs-number">6</span>],
+       [ <span class="hljs-number">9</span>, <span class="hljs-number">10</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>],
+       [<span class="hljs-number">13</span>,  <span class="hljs-number">0</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>],
+       [ <span class="hljs-number">0</span>, <span class="hljs-number">12</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>],
+       [ <span class="hljs-number">3</span>,  <span class="hljs-number">1</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>],
+       [ <span class="hljs-number">2</span>,  <span class="hljs-number">9</span>, <span class="hljs-number">-1</span>, <span class="hljs-number">-1</span>]]
+
+<span class="hljs-comment"># It gets transformed to - </span>
+padded_GeMM = 
+        [[ <span class="hljs-number">0.</span>,  <span class="hljs-number">1.</span>,  <span class="hljs-number">2.</span>, <span class="hljs-number">12.</span>, <span class="hljs-number">13.</span>],
+         [ <span class="hljs-number">1.</span>,  <span class="hljs-number">2.</span>,  <span class="hljs-number">0.</span>, <span class="hljs-number">14.</span>,  <span class="hljs-number">3.</span>],
+         [ <span class="hljs-number">2.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">1.</span>,  <span class="hljs-number">9.</span>, <span class="hljs-number">15.</span>],
+         [ <span class="hljs-number">3.</span>,  <span class="hljs-number">4.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">1.</span>, <span class="hljs-number">14.</span>],
+         [ <span class="hljs-number">4.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">3.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [ <span class="hljs-number">5.</span>,  <span class="hljs-number">3.</span>,  <span class="hljs-number">4.</span>,  <span class="hljs-number">6.</span>, <span class="hljs-number">10.</span>],
+         [ <span class="hljs-number">6.</span>,  <span class="hljs-number">7.</span>,  <span class="hljs-number">8.</span>, <span class="hljs-number">10.</span>,  <span class="hljs-number">5.</span>],
+         [ <span class="hljs-number">7.</span>,  <span class="hljs-number">8.</span>,  <span class="hljs-number">6.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [ <span class="hljs-number">8.</span>,  <span class="hljs-number">6.</span>,  <span class="hljs-number">7.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [ <span class="hljs-number">9.</span>, <span class="hljs-number">10.</span>, <span class="hljs-number">11.</span>, <span class="hljs-number">15.</span>,  <span class="hljs-number">2.</span>],
+         [<span class="hljs-number">10.</span>, <span class="hljs-number">11.</span>,  <span class="hljs-number">9.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">6.</span>],
+         [<span class="hljs-number">11.</span>,  <span class="hljs-number">9.</span>, <span class="hljs-number">10.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">12.</span>, <span class="hljs-number">13.</span>,  <span class="hljs-number">0.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">13.</span>,  <span class="hljs-number">0.</span>, <span class="hljs-number">12.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">14.</span>,  <span class="hljs-number">3.</span>,  <span class="hljs-number">1.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">15.</span>,  <span class="hljs-number">2.</span>,  <span class="hljs-number">9.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>]]
+</div></code></pre>
+<p>Code</p>
+<pre><code class="language-python"><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">pad_gemm</span>(<span class="hljs-params">self, m, xsz, device</span>):</span>
+        <span class="hljs-string">&quot;&quot;&quot; extracts one-ring neighbors (4x) -&gt; m.gemm_edges
+        which is of size #edges x 4
+        add the edge_id itself to make #edges x 5
+        then pad to desired size e.g., xsz x 5
+        &quot;&quot;&quot;</span>
+        padded_gemm = torch.tensor(m.gemm_edges, device=device).float()
+        padded_gemm = padded_gemm.requires_grad_()
+        padded_gemm = torch.cat((torch.arange(m.edges_count, device=device).float().unsqueeze(<span class="hljs-number">1</span>), padded_gemm), dim=<span class="hljs-number">1</span>)
+        <span class="hljs-comment"># [[1.,  2., 12., 13.],  [2.,  0., 14.,  3.]]-&gt;  [[ 0.,  1.,  2., 12., 13.],[ 1.,  2.,  0., 14.,  3.]]</span>
+        <span class="hljs-comment"># xsz is the number of edges you want to pad each mesh to, in our example its 16</span>
+        <span class="hljs-comment"># pad using F</span>
+        padded_gemm = F.pad(padded_gemm, (<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, xsz - m.edges_count), <span class="hljs-string">&quot;constant&quot;</span>, <span class="hljs-number">0</span>)
+        padded_gemm = padded_gemm.unsqueeze(<span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> padded_gemm <span class="hljs-comment"># torch.Size([16, 5])</span>
+</div></code></pre>
+<p>Now we are ready with the following -</p>
+<p><img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/gemm_start.png" alt="Image"></p>
+<p>This GeMM matrix contains edge_ids. We need to replace these edge ids with the corresponding edge features.</p>
+<p><strong>(b) Create actual GeMM matrix</strong></p>
+<pre><code class="language-python"><div>
+<span class="hljs-comment">## Inputs</span>
+features = [[[<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">2.1082</span>,
+          <span class="hljs-number">2.1082</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>],
+         [<span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>,
+          <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>],
+         [<span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>,
+          <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>],
+         [<span class="hljs-number">3.6986</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">7.5237</span>,
+          <span class="hljs-number">7.5237</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5237</span>],
+         [<span class="hljs-number">3.6889</span>, <span class="hljs-number">7.5043</span>, <span class="hljs-number">7.5358</span>, <span class="hljs-number">3.6889</span>, <span class="hljs-number">7.5358</span>, <span class="hljs-number">7.5358</span>, <span class="hljs-number">3.6889</span>, <span class="hljs-number">7.5358</span>,
+          <span class="hljs-number">7.5358</span>, <span class="hljs-number">3.6889</span>, <span class="hljs-number">7.5043</span>, <span class="hljs-number">7.5358</span>, <span class="hljs-number">7.5358</span>, <span class="hljs-number">7.5358</span>, <span class="hljs-number">7.5358</span>, <span class="hljs-number">7.5358</span>]]]
+<span class="hljs-comment"># features shape - [1, 5, 16]</span>
+padded_GeMM = 
+        [[ <span class="hljs-number">0.</span>,  <span class="hljs-number">1.</span>,  <span class="hljs-number">2.</span>, <span class="hljs-number">12.</span>, <span class="hljs-number">13.</span>],
+         [ <span class="hljs-number">1.</span>,  <span class="hljs-number">2.</span>,  <span class="hljs-number">0.</span>, <span class="hljs-number">14.</span>,  <span class="hljs-number">3.</span>],
+         [ <span class="hljs-number">2.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">1.</span>,  <span class="hljs-number">9.</span>, <span class="hljs-number">15.</span>],
+         [ <span class="hljs-number">3.</span>,  <span class="hljs-number">4.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">1.</span>, <span class="hljs-number">14.</span>],
+         [ <span class="hljs-number">4.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">3.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [ <span class="hljs-number">5.</span>,  <span class="hljs-number">3.</span>,  <span class="hljs-number">4.</span>,  <span class="hljs-number">6.</span>, <span class="hljs-number">10.</span>],
+         [ <span class="hljs-number">6.</span>,  <span class="hljs-number">7.</span>,  <span class="hljs-number">8.</span>, <span class="hljs-number">10.</span>,  <span class="hljs-number">5.</span>],
+         [ <span class="hljs-number">7.</span>,  <span class="hljs-number">8.</span>,  <span class="hljs-number">6.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [ <span class="hljs-number">8.</span>,  <span class="hljs-number">6.</span>,  <span class="hljs-number">7.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [ <span class="hljs-number">9.</span>, <span class="hljs-number">10.</span>, <span class="hljs-number">11.</span>, <span class="hljs-number">15.</span>,  <span class="hljs-number">2.</span>],
+         [<span class="hljs-number">10.</span>, <span class="hljs-number">11.</span>,  <span class="hljs-number">9.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">6.</span>],
+         [<span class="hljs-number">11.</span>,  <span class="hljs-number">9.</span>, <span class="hljs-number">10.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">12.</span>, <span class="hljs-number">13.</span>,  <span class="hljs-number">0.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">13.</span>,  <span class="hljs-number">0.</span>, <span class="hljs-number">12.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">14.</span>,  <span class="hljs-number">3.</span>,  <span class="hljs-number">1.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>],
+         [<span class="hljs-number">15.</span>,  <span class="hljs-number">2.</span>,  <span class="hljs-number">9.</span>, <span class="hljs-number">-1.</span>, <span class="hljs-number">-1.</span>]]
+<span class="hljs-comment"># padded_GeMM shape - [1, 16, 5]</span>
+
+<span class="hljs-comment"># 1. add 0 along each row of feature vector</span>
+[
+    [<span class="hljs-number">0.0000</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>,
+          <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">9.3738</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>, <span class="hljs-number">2.1082</span>,
+          <span class="hljs-number">2.1082</span>],
+         [<span class="hljs-number">0.0000</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>,
+          <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>,
+          <span class="hljs-number">5.5651</span>] ...
+]
+<span class="hljs-comment">#features shape - torch.Size([1, 5, 17])</span>
+
+<span class="hljs-comment"># 2. shift GeMM matrix by 1 index</span>
+[
+    [ <span class="hljs-number">1.</span>,  <span class="hljs-number">2.</span>,  <span class="hljs-number">3.</span>, <span class="hljs-number">13.</span>, <span class="hljs-number">14.</span>],
+    [ <span class="hljs-number">2.</span>,  <span class="hljs-number">3.</span>,  <span class="hljs-number">1.</span>, <span class="hljs-number">15.</span>,  <span class="hljs-number">4.</span>],
+    [ <span class="hljs-number">3.</span>,  <span class="hljs-number">1.</span>,  <span class="hljs-number">2.</span>, <span class="hljs-number">10.</span>, <span class="hljs-number">16.</span>],
+    [ <span class="hljs-number">4.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">6.</span>,  <span class="hljs-number">2.</span>, <span class="hljs-number">15.</span>],
+    [ <span class="hljs-number">5.</span>,  <span class="hljs-number">6.</span>,  <span class="hljs-number">4.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>],
+    [ <span class="hljs-number">6.</span>,  <span class="hljs-number">4.</span>,  <span class="hljs-number">5.</span>,  <span class="hljs-number">7.</span>, <span class="hljs-number">11.</span>],
+    [ <span class="hljs-number">7.</span>,  <span class="hljs-number">8.</span>,  <span class="hljs-number">9.</span>, <span class="hljs-number">11.</span>,  <span class="hljs-number">6.</span>],
+    [ <span class="hljs-number">8.</span>,  <span class="hljs-number">9.</span>,  <span class="hljs-number">7.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>],
+    [ <span class="hljs-number">9.</span>,  <span class="hljs-number">7.</span>,  <span class="hljs-number">8.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>],
+    [<span class="hljs-number">10.</span>, <span class="hljs-number">11.</span>, <span class="hljs-number">12.</span>, <span class="hljs-number">16.</span>,  <span class="hljs-number">3.</span>],
+    [<span class="hljs-number">11.</span>, <span class="hljs-number">12.</span>, <span class="hljs-number">10.</span>,  <span class="hljs-number">6.</span>,  <span class="hljs-number">7.</span>],
+    [<span class="hljs-number">12.</span>, <span class="hljs-number">10.</span>, <span class="hljs-number">11.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>],
+    [<span class="hljs-number">13.</span>, <span class="hljs-number">14.</span>,  <span class="hljs-number">1.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>],
+    [<span class="hljs-number">14.</span>,  <span class="hljs-number">1.</span>, <span class="hljs-number">13.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>],
+    [<span class="hljs-number">15.</span>,  <span class="hljs-number">4.</span>,  <span class="hljs-number">2.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>],
+    [<span class="hljs-number">16.</span>,  <span class="hljs-number">3.</span>, <span class="hljs-number">10.</span>,  <span class="hljs-number">0.</span>,  <span class="hljs-number">0.</span>]
+]
+<span class="hljs-comment"># 3. Flatten GeMM ids</span>
+<span class="hljs-string">&#x27;&#x27;&#x27;
+    This function ensures that edge ids are unique across batches
+    when we load 2 meshes they can have same edge ids
+    when doing batch processing we need to ensure that edge ids
+    are unique across batch hence we add extra index across batch.
+
+    Lets look at an example to see how that happens - 
+
+    Input: GeMM matrix -
+    Output: GeMM matrix with unique edge ids across batches
+
+
+    Example:
+    given a GeMM matrix with size [batches, 16, 5]
+    Create a matrix of dimensions [batches, 16+1, 1]
+    Each batch will have an element = batch_number * (16+1)
+    
+    if batches = 1 - 
+    add_fac = [[[0], [0], ..., [0]]
+                    ]
+                    1 x 17
+    if batches = 2
+    add_fac =  [[[0], [0], ..., [0]]
+                ],
+            [[17], [17], ..., [17]]
+                ]
+                2 x 17
+    Repeat these elements across final dimension -
+    if batches = 1 - 
+    add_fac = [[[0, 0, 0, 0, 0], [0,...], ..., [0,...]]
+                    ]
+                    1 x 17 x 5
+    if batches = 2
+    add_fac =  [[[0, 0, 0, 0, 0], [0,...], ..., [0,...]]
+                ],
+            [[17, 17, 17, 17, 17], [17,...], ..., [17,...]]
+                ]
+                2 x 17 x 5
+
+    Finally add the add_fac matrix to your GeMM matrix
+
+In our example our GeMM matrix will not change since we
+are having one batch so add_fac matrix will be all 0s.
+&#x27;&#x27;&#x27;</span>
+<span class="hljs-comment"># 4. Given shifted GeMM matrix and edge features select edge features based on edge ids present inside GeMM matrix.</span>
+
+<span class="hljs-comment"># features = [1, 5, 17]</span>
+<span class="hljs-comment"># GeMM_flat -&gt; [80,]</span>
+GeMM_flat = [ <span class="hljs-number">1</span>,  <span class="hljs-number">2</span>,  <span class="hljs-number">3</span>, <span class="hljs-number">13</span>, <span class="hljs-number">14</span>,  <span class="hljs-number">2</span>,  <span class="hljs-number">3</span>,  <span class="hljs-number">1</span>, <span class="hljs-number">15</span>,  <span class="hljs-number">4</span>,  <span class="hljs-number">3</span>,  <span class="hljs-number">1</span>,  <span class="hljs-number">2</span>, <span class="hljs-number">10</span>, <span class="hljs-number">16</span>,  <span class="hljs-number">4</span>,  <span class="hljs-number">5</span>,  <span class="hljs-number">6</span>,
+         <span class="hljs-number">2</span>, <span class="hljs-number">15</span>,  <span class="hljs-number">5</span>,  <span class="hljs-number">6</span>,  <span class="hljs-number">4</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">6</span>,  <span class="hljs-number">4</span>,  <span class="hljs-number">5</span>,  <span class="hljs-number">7</span>, <span class="hljs-number">11</span>,  <span class="hljs-number">7</span>,  <span class="hljs-number">8</span>,  <span class="hljs-number">9</span>, <span class="hljs-number">11</span>,  <span class="hljs-number">6</span>,  <span class="hljs-number">8</span>,
+         <span class="hljs-number">9</span>,  <span class="hljs-number">7</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">9</span>,  <span class="hljs-number">7</span>,  <span class="hljs-number">8</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>, <span class="hljs-number">10</span>, <span class="hljs-number">11</span>, <span class="hljs-number">12</span>, <span class="hljs-number">16</span>,  <span class="hljs-number">3</span>, <span class="hljs-number">11</span>, <span class="hljs-number">12</span>, <span class="hljs-number">10</span>,  <span class="hljs-number">6</span>,
+         <span class="hljs-number">7</span>, <span class="hljs-number">12</span>, <span class="hljs-number">10</span>, <span class="hljs-number">11</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>, <span class="hljs-number">13</span>, <span class="hljs-number">14</span>,  <span class="hljs-number">1</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>, <span class="hljs-number">14</span>,  <span class="hljs-number">1</span>, <span class="hljs-number">13</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>, <span class="hljs-number">15</span>,  <span class="hljs-number">4</span>,
+         <span class="hljs-number">2</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>, <span class="hljs-number">16</span>,  <span class="hljs-number">3</span>, <span class="hljs-number">10</span>,  <span class="hljs-number">0</span>,  <span class="hljs-number">0</span>]
+
+final_GeMM = torch.index_select(features, dim=<span class="hljs-number">0</span>, index=GeMM_flat)
+<span class="hljs-comment"># final_GeMM -&gt; [80, 5]</span>
+<span class="hljs-comment"># each index tells which row to select</span>
+<span class="hljs-comment"># edge_id 1 means it will select all features of row1</span>
+<span class="hljs-comment"># of features matrix</span>
+
+final_GeMM = [[<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5043</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">2.1082</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5237</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">5.5651</span>, <span class="hljs-number">7.5553</span>, <span class="hljs-number">7.5358</span>],
+        [<span class="hljs-number">9.3738</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">9.5310</span>, <span class="hljs-number">3.6986</span>, <span class="hljs-number">3.6889</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>],
+        [<span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>, <span class="hljs-number">0.0000</span>]]
+<span class="hljs-comment"># reshape this as [1, 16, 5, 5]</span>
+<span class="hljs-comment"># [[e1, e2, e3, e4, e5],  [e1, e2, e3, e4, e5],...]</span>
+
+<span class="hljs-comment"># each edge has 5 neighbors with features dim as 5</span>
+<span class="hljs-comment"># convert shape to -&gt; [1, 5, 16, 5]</span>
+<span class="hljs-comment"># channel x edge x features</span>
+<span class="hljs-comment"># channel - neighbor number</span>
+<span class="hljs-comment"># so channel 1 has all the</span>
+</div></code></pre>
+<p>So far we have come up to with the following transformation -</p>
+<p><img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/real_gemm.png" alt="Image"></p>
+<p>In features matrix on the left f1 corresponds to feature 1 of all the 16 edges.
+On the right f1 corresponds to feature 1 of that edge.
+Also <code>n</code> means <code>edge neighbor</code> do not confuse it with node.</p>
+<p>Its time to make these edge features symmetric.</p>
+<p><strong>(c) Create Symmetric Features</strong></p>
+<pre><code class="language-python"><div><span class="hljs-comment"># let f be the final GeMM matrix</span>
+<span class="hljs-comment"># apply the symmetric functions for an equivariant conv</span>
+x_1 = f[:, :, :, <span class="hljs-number">1</span>] + f[:, :, :, <span class="hljs-number">3</span>] <span class="hljs-comment"># [1, 5 ,16, 1]</span>
+x_2 = f[:, :, :, <span class="hljs-number">2</span>] + f[:, :, :, <span class="hljs-number">4</span>]
+x_3 = torch.abs(f[:, :, :, <span class="hljs-number">1</span>] - f[:, :, :, <span class="hljs-number">3</span>])
+x_4 = torch.abs(f[:, :, :, <span class="hljs-number">2</span>] - f[:, :, :, <span class="hljs-number">4</span>])
+f = torch.stack([f[:, :, :, <span class="hljs-number">0</span>], x_1, x_2, x_3, x_4], dim=<span class="hljs-number">3</span>)
+
+</div></code></pre>
+<p>In the first step they create <code>x1, x2, x3, x4</code> symmetric features
+and then stack then along with <code>f1</code>.</p>
+<p><img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/create_symmetric_features.png" alt="Image"></p>
+<p>The curly braces <code>{}</code> in the image denote the <code>abs</code> operation.</p>
+<p>Stack!
+<img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/stacked.png" alt="Image"></p>
+<p><strong>(d) Convolution</strong></p>
+<p>Lets called this stacked matrix
+G. We are now ready for applying convolution to this matrix.</p>
+<pre><code class="language-python"><div><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MeshConv</span>(<span class="hljs-params">nn.Module</span>):</span>
+    <span class="hljs-string">&quot;&quot;&quot; Computes convolution between edges and 4 incident (1-ring) edge neighbors
+    in the forward pass takes:
+    x: edge features (Batch x Features x Edges)
+    mesh: list of mesh data-structure (len(mesh) == Batch)
+    and applies convolution
+    &quot;&quot;&quot;</span>
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">__init__</span>(<span class="hljs-params">self, in_channels, out_channels, k=<span class="hljs-number">5</span>, bias=True</span>):</span>
+        super(MeshConv, self).__init__()
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=(<span class="hljs-number">1</span>, k), bias=bias)
+        self.k = k
+
+
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">forward</span>(<span class="hljs-params">self, x, mesh</span>):</span>
+        <span class="hljs-comment"># all the GeMM matrix prep steps....</span>
+        x = self.conv(G)
+</div></code></pre>
+<p>We are applying a <code>(1 x k)</code> convolution filter. So what is k? Here <code>k = 5</code>.</p>
+<p><img src="file:////Users/shubham1.bhardwaj/Documents/MastersResearch/mesh_cnn_tutorial/convolve.png" alt="Image"></p>
+
+    </body>
+    </html>
