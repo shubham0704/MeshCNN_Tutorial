@@ -18,6 +18,7 @@ Contents
 -----
 
 ## 1. Introduction to Mesh Convolution
+MeshCNN is a general-purpose deep neural network for 3D triangular meshes, which can be used for tasks such as 3D shape classification or segmentation. This framework includes convolution, pooling and unpooling layers which are applied directly on the mesh edges.
 
 ### 1.1 How do we prepare the mesh to input into the network?
 
